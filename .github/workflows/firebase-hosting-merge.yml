@@ -8,7 +8,7 @@ jobs:
     build_and_deploy:
         runs-on: ubuntu-latest
 
-        # Make env available to all steps (build & any future steps)
+        # These envs are available to the build (Next.js will inline NEXT_PUBLIC_*)
         env:
             NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
             NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
@@ -20,7 +20,7 @@ jobs:
             NEXT_PUBLIC_GOOGLE_MAP_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAP_ID }}
             GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
             GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-            # optional: NEXT_TELEMETRY_DISABLED: 1
+            # NEXT_TELEMETRY_DISABLED: 1
 
         steps:
             - uses: actions/checkout@v4
@@ -28,12 +28,34 @@ jobs:
             - uses: actions/setup-node@v4
               with:
                   node-version: 20
-                  cache: npm
+                  cache: 'npm'
 
             - run: npm ci
             - run: npm run build
 
-            - uses: FirebaseExtended/action-hosting-deploy@v0
+            # Authenticate to GCP using the same SA JSON you use for Firebase
+            - name: Auth to Google Cloud
+              uses: google-github-actions/auth@v2
+              with:
+                  credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_AI_TRIP_PLANNER_2241E }}
+
+            - name: Setup gcloud
+              uses: google-github-actions/setup-gcloud@v2
+
+            # Idempotent; safe to run every time. If your SA can't enable services,
+            # enable them once in the console instead.
+            - name: Enable required APIs
+              run: |
+                  gcloud config set project ai-trip-planner-2241e
+                  gcloud services enable \
+                    cloudfunctions.googleapis.com \
+                    run.googleapis.com \
+                    cloudbuild.googleapis.com \
+                    artifactregistry.googleapis.com \
+                    secretmanager.googleapis.com
+
+            - name: Deploy to Firebase Hosting
+              uses: FirebaseExtended/action-hosting-deploy@v0
               with:
                   repoToken: ${{ secrets.GITHUB_TOKEN }}
                   firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_AI_TRIP_PLANNER_2241E }}
